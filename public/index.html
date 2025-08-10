@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Multiplayer Car Battle</title>
     <style>
         body {
@@ -12,6 +12,7 @@
             color: white;
             font-family: 'Arial', sans-serif;
             overflow: hidden;
+            overscroll-behavior: none;
         }
 
         #gameContainer {
@@ -24,6 +25,10 @@
             background: #2d2d2d;
             border: 2px solid #444;
             cursor: crosshair;
+            touch-action: none; /* Disable default touch gestures */
+            -webkit-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
         }
 
         #ui {
@@ -194,6 +199,7 @@
             <div>↓ - Brake/Reverse</div>
             <div>← → - Steer</div>
             <div>🚀 SPACE - Shoot Laser</div>
+            <div>📱 Mobile: Tap to move, double tap to shoot</div>
             <div><em>Crash into others or shoot them!</em></div>
         </div>
 

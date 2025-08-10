@@ -27,6 +27,25 @@ const keys = {
     shoot: false
 };
 
+// Mobile/touch helpers
+let touchTarget = null; // world-space point to drive toward
+let lastTapTime = 0;
+const doubleTapThresholdMs = 300;
+
+function screenToWorld(x, y) {
+    return {
+        x: x + camera.x,
+        y: y + camera.y
+    };
+}
+
+function normalizeAngle(angle) {
+    // Normalize to [-PI, PI]
+    while (angle > Math.PI) angle -= 2 * Math.PI;
+    while (angle < -Math.PI) angle += 2 * Math.PI;
+    return angle;
+}
+
 // Resize canvas to fit window
 function resizeCanvas() {
     canvas.width = window.innerWidth;
@@ -66,6 +85,46 @@ document.addEventListener('keydown', (e) => {
             e.preventDefault();
             break;
     }
+});
+
+// Touch controls: single tap to move, double tap to shoot
+// Prevent default touch gestures on the canvas
+canvas.addEventListener('touchstart', (e) => {
+    if (e.cancelable) e.preventDefault();
+    const t = e.touches[0];
+    if (!t) return;
+    const now = Date.now();
+    const isDoubleTap = (now - lastTapTime) <= doubleTapThresholdMs;
+    lastTapTime = now;
+
+    const rect = canvas.getBoundingClientRect();
+    const sx = t.clientX - rect.left;
+    const sy = t.clientY - rect.top;
+    const world = screenToWorld(sx, sy);
+
+    if (isDoubleTap) {
+        // Fire immediately
+        socket.emit('shoot');
+    } else {
+        // Set movement target
+        touchTarget = world;
+    }
+});
+
+canvas.addEventListener('touchmove', (e) => {
+    if (e.cancelable) e.preventDefault();
+    const t = e.touches[0];
+    if (!t) return;
+    const rect = canvas.getBoundingClientRect();
+    const sx = t.clientX - rect.left;
+    const sy = t.clientY - rect.top;
+    touchTarget = screenToWorld(sx, sy);
+});
+
+canvas.addEventListener('touchend', (e) => {
+    if (e.cancelable) e.preventDefault();
+    // Do not clear target immediately; allow coasting. Optional: clear on end
+    // touchTarget = null;
 });
 
 document.addEventListener('keyup', (e) => {
@@ -346,6 +405,33 @@ function gameLoop() {
     if (keys.shoot) {
         socket.emit('shoot');
         keys.shoot = false; // Prevent continuous shooting
+    }
+    
+    // If we have a touch target, steer toward it and accelerate
+    const myPlayer = gameState.players.find(p => p.id === gameState.myPlayerId);
+    if (touchTarget && myPlayer && myPlayer.isAlive) {
+        const dx = touchTarget.x - myPlayer.x;
+        const dy = touchTarget.y - myPlayer.y;
+        const dist = Math.hypot(dx, dy);
+        const targetAngle = Math.atan2(dy, dx);
+        const angleDelta = normalizeAngle(targetAngle - myPlayer.angle);
+
+        // Steering
+        const steerThreshold = 0.08; // radians
+        keys.left = angleDelta < -steerThreshold;
+        keys.right = angleDelta > steerThreshold;
+
+        // Acceleration toward target while far enough
+        const arriveDistance = 40;
+        keys.up = dist > arriveDistance;
+
+        // If close, stop and clear target
+        if (dist <= arriveDistance) {
+            keys.up = false;
+            keys.left = false;
+            keys.right = false;
+            touchTarget = null;
+        }
     }
     
     // Draw everything
