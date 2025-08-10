@@ -95,6 +95,27 @@
             z-index: 100;
         }
 
+        #toggleControlsBtn {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.85);
+            color: #fff;
+            border: 1px solid #555;
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 14px;
+            z-index: 110;
+            cursor: pointer;
+            display: none; /* shown on mobile via media query */
+        }
+
+        @media (max-width: 768px) {
+            #controls { display: none; }
+            #toggleControlsBtn { display: block; }
+            #leaderboard { right: 10px; top: 10px; }
+        }
+
         #joinForm {
             position: absolute;
             top: 50%;
@@ -206,6 +227,8 @@
         <button id="respawnButton" onclick="respawn()">Respawn</button>
 
         <canvas class="minimap" id="minimap" style="display: none;"></canvas>
+
+        <button id="toggleControlsBtn" onclick="toggleControls()">Show Controls</button>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>

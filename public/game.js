@@ -29,6 +29,9 @@ const keys = {
 
 // Mobile/touch helpers
 let touchTarget = null; // world-space point to drive toward
+let touchActive = false; // whether user is currently touch-driving
+let touchHeading = null; // desired heading (radians), set once when starting
+let headingLocked = false; // once aligned, stop steering
 let lastTapTime = 0;
 const doubleTapThresholdMs = 300;
 
@@ -87,6 +90,21 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
+// Toggle Controls (for mobile)
+window.toggleControls = function toggleControls() {
+    const controls = document.getElementById('controls');
+    const btn = document.getElementById('toggleControlsBtn');
+    // If inline style empty, read computed
+    const isVisible = (controls.style.display ? controls.style.display !== 'none' : getComputedStyle(controls).display !== 'none');
+    if (isVisible) {
+        controls.style.display = 'none';
+        if (btn) btn.textContent = 'Show Controls';
+    } else {
+        controls.style.display = 'block';
+        if (btn) btn.textContent = 'Hide Controls';
+    }
+};
+
 // Touch controls: single tap to move, double tap to shoot
 // Prevent default touch gestures on the canvas
 canvas.addEventListener('touchstart', (e) => {
@@ -106,8 +124,11 @@ canvas.addEventListener('touchstart', (e) => {
         // Fire immediately
         socket.emit('shoot');
     } else {
-        // Set movement target
+        // Set movement target; activate touch driving
         touchTarget = world;
+        touchActive = true;
+        touchHeading = null; // will be computed next frame based on current car pose
+        headingLocked = false;
     }
 });
 
@@ -119,12 +140,19 @@ canvas.addEventListener('touchmove', (e) => {
     const sx = t.clientX - rect.left;
     const sy = t.clientY - rect.top;
     touchTarget = screenToWorld(sx, sy);
+    touchActive = true;
+    // Do not constantly re-steer: only update target point; keep heading locked
 });
 
 canvas.addEventListener('touchend', (e) => {
     if (e.cancelable) e.preventDefault();
-    // Do not clear target immediately; allow coasting. Optional: clear on end
-    // touchTarget = null;
+    // Stop accelerating and steering when touch ends
+    touchActive = false;
+    touchHeading = null;
+    headingLocked = false;
+    keys.up = false;
+    keys.left = false;
+    keys.right = false;
 });
 
 document.addEventListener('keyup', (e) => {
@@ -160,7 +188,13 @@ socket.on('joined', (data) => {
     document.getElementById('joinForm').style.display = 'none';
     document.getElementById('ui').style.display = 'block';
     document.getElementById('leaderboard').style.display = 'block';
-    document.getElementById('controls').style.display = 'block';
+    // Controls: allow CSS to decide on mobile; explicitly show on desktop widths
+    const controlsEl = document.getElementById('controls');
+    if (window.innerWidth > 768) {
+        controlsEl.style.display = 'block';
+    } else {
+        controlsEl.style.display = '';
+    }
     document.getElementById('minimap').style.display = 'block';
     
     console.log('Joined game with ID:', data.id);
@@ -407,29 +441,48 @@ function gameLoop() {
         keys.shoot = false; // Prevent continuous shooting
     }
     
-    // If we have a touch target, steer toward it and accelerate
+    // Touch driving: align once, then go straight until arrival or touch end
     const myPlayer = gameState.players.find(p => p.id === gameState.myPlayerId);
-    if (touchTarget && myPlayer && myPlayer.isAlive) {
+    if (touchActive && touchTarget && myPlayer && myPlayer.isAlive) {
         const dx = touchTarget.x - myPlayer.x;
         const dy = touchTarget.y - myPlayer.y;
         const dist = Math.hypot(dx, dy);
-        const targetAngle = Math.atan2(dy, dx);
-        const angleDelta = normalizeAngle(targetAngle - myPlayer.angle);
 
-        // Steering
-        const steerThreshold = 0.08; // radians
-        keys.left = angleDelta < -steerThreshold;
-        keys.right = angleDelta > steerThreshold;
+        // Compute heading once when starting
+        if (touchHeading === null) {
+            touchHeading = Math.atan2(dy, dx);
+            headingLocked = false;
+        }
 
-        // Acceleration toward target while far enough
+        const angleDelta = normalizeAngle((touchHeading ?? 0) - myPlayer.angle);
+        const steerThreshold = 0.05; // smaller threshold for precise alignment
+
+        if (!headingLocked) {
+            keys.left = angleDelta < -steerThreshold;
+            keys.right = angleDelta > steerThreshold;
+
+            // Lock once aligned
+            if (Math.abs(angleDelta) <= steerThreshold) {
+                keys.left = false;
+                keys.right = false;
+                headingLocked = true;
+            }
+        } else {
+            // Keep steering off while locked to avoid swerving
+            keys.left = false;
+            keys.right = false;
+        }
+
+        // Accelerate straight ahead while active and not arrived
         const arriveDistance = 40;
         keys.up = dist > arriveDistance;
 
-        // If close, stop and clear target
         if (dist <= arriveDistance) {
+            // Arrived: stop
             keys.up = false;
-            keys.left = false;
-            keys.right = false;
+            touchActive = false;
+            touchHeading = null;
+            headingLocked = false;
             touchTarget = null;
         }
     }
